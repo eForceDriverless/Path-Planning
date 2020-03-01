@@ -1,18 +1,19 @@
 import numpy as np
+import warnings
 
 class PathPlanning(object):
-    def __init__(self, start_point, direction=-1, debugging=False):
+    def __init__(self, start_point, clockwise=-1, debugging=False):
         """
         :params start_point: numpy.array with coordinates of starting point
-        :param direction: direction in which we want to find path
-                            (if start_point[1]==0 => direction is -1 !!!)
+        :param clockwise: direction in which we want to find path 
+                            (if start_point[1]==0 => direction is -1 !!!)
 
         """
         self.sorted_blue_cones = []
         self.sorted_yellow_cones = []
         self.start_points = [start_point]
-        self.direction = direction
-        # parameters of normal line
+        self.clockwise = clockwise
+        # parameters of normal line
         self.k = 0
         self.c = None
         self.k_past = 0
@@ -22,12 +23,12 @@ class PathPlanning(object):
             self.cs = []
             self.direction_changes = []
 
-    def reset(self, start_point, direction=-1):
+    def reset(self, start_point, clockwise=-1):
         self.sorted_blue_cones = []
         self.sorted_yellow_cones = []
         self.start_points = [start_point]
-        self.direction = direction
-        # parameters of normal line
+        self.clockwise = clockwise
+        # parameters of normal line
         self.k = None
         self.c = None
         self.k_past = 0
@@ -41,7 +42,7 @@ class PathPlanning(object):
         return (np.all(np.isin(point, self.sorted_yellow_cones)) or np.all(np.isin(point, self.sorted_blue_cones)))
 
     def points_above_normal(self, points):
-        return points[np.sign((points[:,1] - self.k * points[:,0] - self.c))==np.sign(self.k)*self.direction]
+        return points[np.sign((points[:,1] - self.k * points[:,0] - self.c))==np.sign(self.k)*self.clockwise]
 
     def find_closest_one(self, points):
         closest_index = np.argmin(np.linalg.norm(points-self.start_points[-1], axis=1))
@@ -50,25 +51,25 @@ class PathPlanning(object):
 
     def calculate_center(self, pointB, pointY):
         return np.array([(pointB[0]-pointY[0])/2 + pointY[0], (pointB[1]-pointY[1])/2 + pointY[1]])
-
+    
     def return_stack(self, object_name):
         if object_name == "yellow cones":
             return np.vstack(self.sorted_yellow_cones)
         elif object_name == "blue cones":
             return np.vstack(self.sorted_blue_cones)
         elif object_name == "centers":
-            return np.vstack(self.start_points)
+            return np.vstack(self.start_points)           
 
     def find_line_parameters(self, pointB, pointY, normal=True):
         k = (pointB[1]-pointY[1])/(pointB[0]-pointY[0])
         self.k_past = self.k
-        self.k = -1/k if normal else k
+        self.k = -1/k if normal else k 
         c = pointB[1] - self.k*pointB[0]
         self.c = c
-
+    
     def check_direction(self):
         if self.k != None and (self.k-self.k_past)==0:# and not(self.auxiliary_variable):
-            self.direction = - self.direction
+            self.clockwise = - self.clockwise
 
     def find_next_center(self, pointsB, pointsY, step=None, verbose=True):
         self.find_line_parameters(self.start_points[-1], self.start_points[-2])
@@ -77,8 +78,8 @@ class PathPlanning(object):
         if self.debugging:
             self.ks.append(self.k)
             self.cs.append(self.c)
-            self.direction_changes.append(self.direction)
-
+            self.direction_changes.append(self.clockwise)
+           
 
         B_hat = self.points_above_normal(pointsB)
         Y_hat = self.points_above_normal(pointsY)
@@ -95,7 +96,7 @@ class PathPlanning(object):
         self.start_points.append(s)
         if verbose:
             if step != None:
-                print("Step {} done!".format(step))
+                print("Step {} done!".format(step+1))
                 #print(f"y={-1/self.k*b[0]+self.c},k={self.c}, b={self.c}")
             else:
                 print("Step done!")
@@ -138,6 +139,14 @@ class PathPlanning(object):
         #every other step
         if n_steps >2:
             for step in range(n_steps-2):
-                self.find_next_center(B, Y, step+2, verbose=verbose)
-                if self.debugging:
-                    print(f"k={self.k}, c={self.c}, direction={self.direction}")
+                try:
+                    self.find_next_center(B, Y, step+2, verbose=verbose)
+                    if self.debugging:
+                        print(f"k={self.k}, c={self.c}, clockwise={self.clockwise}")
+                except ValueError as err:
+                    # catching specific error
+                    if str(err) == "attempt to get argmin of an empty sequence":
+                        warnings.warn("Too many iteration!")
+                        break
+                    else: 
+                        raise ValueError(str(err))
